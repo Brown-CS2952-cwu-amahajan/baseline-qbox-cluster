@@ -17,12 +17,6 @@ var http = require('http')
 var dispatcher = require('httpdispatcher')
 var faker = require('faker');
 
-ampq.connect('amqp://localhost', function(err, conn) {
-  if (err != null) bail(err);
-  consumer(conn);
-  publisher(conn);
-})
-
 var port = parseInt(process.argv[2])
 
 var userAddedRatings = [] // used to demonstrate POST functionality
