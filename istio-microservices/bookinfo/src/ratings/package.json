@@ -6,6 +6,7 @@
     "httpdispatcher": "1.0.0",
     "faker": "4.1.0",
     "mongodb": "^2.2.31",
-    "mysql": "^2.15.0"
+    "mysql": "^2.15.0",
+    "amqplib": "0.5.5"
   }
 }

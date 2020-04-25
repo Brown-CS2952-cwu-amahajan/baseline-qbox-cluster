@@ -24,15 +24,21 @@ from jaeger_client.reporter import NullReporter
 from jaeger_client.codecs import B3Codec
 from opentracing.ext import tags
 from opentracing.propagation import Format
-from opentracing_instrumentation.request_context import get_current_span, span_in_context
+from opentracing_instrumentation.request_context import (
+    get_current_span,
+    span_in_context,
+)
 import simplejson as json
 import requests
 import sys
+import uuid
 from json2html import *
 import logging
 import requests
 import os
 import asyncio
+import pika
+import threading
 
 # These two lines enable debugging at httplib level (requests->urllib3->http.client)
 # You will see the REQUEST, including HEADERS and DATA, and RESPONSE with HEADERS but without DATA.
@@ -57,35 +63,55 @@ app.secret_key = b'_5#y2L"F4Q8z\n\xec]/'
 
 Bootstrap(app)
 
-servicesDomain = "" if (os.environ.get("SERVICES_DOMAIN") is None) else "." + os.environ.get("SERVICES_DOMAIN")
-detailsHostname = "details" if (os.environ.get("DETAILS_HOSTNAME") is None) else os.environ.get("DETAILS_HOSTNAME")
-ratingsHostname = "ratings" if (os.environ.get("RATINGS_HOSTNAME") is None) else os.environ.get("RATINGS_HOSTNAME")
-reviewsHostname = "reviews" if (os.environ.get("REVIEWS_HOSTNAME") is None) else os.environ.get("REVIEWS_HOSTNAME")
+servicesDomain = (
+    ""
+    if (os.environ.get("SERVICES_DOMAIN") is None)
+    else "." + os.environ.get("SERVICES_DOMAIN")
+)
+detailsHostname = (
+    "details"
+    if (os.environ.get("DETAILS_HOSTNAME") is None)
+    else os.environ.get("DETAILS_HOSTNAME")
+)
+ratingsHostname = (
+    "ratings"
+    if (os.environ.get("RATINGS_HOSTNAME") is None)
+    else os.environ.get("RATINGS_HOSTNAME")
+)
+reviewsHostname = (
+    "reviews"
+    if (os.environ.get("REVIEWS_HOSTNAME") is None)
+    else os.environ.get("REVIEWS_HOSTNAME")
+)
 
-flood_factor = 0 if (os.environ.get("FLOOD_FACTOR") is None) else int(os.environ.get("FLOOD_FACTOR"))
+flood_factor = (
+    0
+    if (os.environ.get("FLOOD_FACTOR") is None)
+    else int(os.environ.get("FLOOD_FACTOR"))
+)
 
 details = {
     "name": "http://{0}{1}:9080".format(detailsHostname, servicesDomain),
     "endpoint": "details",
-    "children": []
+    "children": [],
 }
 
 ratings = {
     "name": "http://{0}{1}:9080".format(ratingsHostname, servicesDomain),
     "endpoint": "ratings",
-    "children": []
+    "children": [],
 }
 
 reviews = {
     "name": "http://{0}{1}:9080".format(reviewsHostname, servicesDomain),
     "endpoint": "reviews",
-    "children": [ratings]
+    "children": [ratings],
 }
 
 productpage = {
     "name": "http://{0}{1}:9080".format(detailsHostname, servicesDomain),
     "endpoint": "details",
-    "children": [details, reviews]
+    "children": [details, reviews],
 }
 
 service_dict = {
@@ -96,11 +122,14 @@ service_dict = {
 
 products = [
     {
-        'id': 0,
-        'title': 'The Comedy of Errors',
-        'descriptionHtml': '<a href="https://en.wikipedia.org/wiki/The_Comedy_of_Errors">Wikipedia Summary</a>: The Comedy of Errors is one of <b>William Shakespeare\'s</b> early plays. It is his shortest and one of his most farcical comedies, with a major part of the humour coming from slapstick and mistaken identity, in addition to puns and word play.'
+        "id": 0,
+        "title": "The Comedy of Errors",
+        "descriptionHtml": '<a href="https://en.wikipedia.org/wiki/The_Comedy_of_Errors">Wikipedia Summary</a>: The Comedy of Errors is one of <b>William Shakespeare\'s</b> early plays. It is his shortest and one of his most farcical comedies, with a major part of the humour coming from slapstick and mistaken identity, in addition to puns and word play.',
     }
 ]
+
+RABBITMQ_HOST = "amqp://user:qxevtnump90@...:5672/"
+connection = pika.BlockingConnection(pika.ConnectionParameters(RABBITMQ_HOST))
 
 # A note on distributed tracing:
 #
@@ -131,45 +160,45 @@ products = [
 # A very basic OpenTracing tracer (with null reporter)
 tracer = Tracer(
     one_span_per_rpc=True,
-    service_name='productpage',
+    service_name="productpage",
     reporter=NullReporter(),
     sampler=ConstSampler(decision=True),
-    extra_codecs={Format.HTTP_HEADERS: B3Codec()}
+    extra_codecs={Format.HTTP_HEADERS: B3Codec()},
 )
 
 
 def trace():
-    '''
+    """
     Function decorator that creates opentracing span from incoming b3 headers
-    '''
+    """
+
     def decorator(f):
         def wrapper(*args, **kwargs):
             request = stack.top.request
             try:
                 # Create a new span context, reading in values (traceid,
                 # spanid, etc) from the incoming x-b3-*** headers.
-                span_ctx = tracer.extract(
-                    Format.HTTP_HEADERS,
-                    dict(request.headers)
-                )
+                span_ctx = tracer.extract(Format.HTTP_HEADERS, dict(request.headers))
                 # Note: this tag means that the span will *not* be
                 # a child span. It will use the incoming traceid and
                 # spanid. We do this to propagate the headers verbatim.
                 rpc_tag = {tags.SPAN_KIND: tags.SPAN_KIND_RPC_SERVER}
                 span = tracer.start_span(
-                    operation_name='op', child_of=span_ctx, tags=rpc_tag
+                    operation_name="op", child_of=span_ctx, tags=rpc_tag
                 )
             except Exception as e:
                 # We failed to create a context, possibly due to no
                 # incoming x-b3-*** headers. Start a fresh span.
                 # Note: This is a fallback only, and will create fresh headers,
                 # not propagate headers.
-                span = tracer.start_span('op')
+                span = tracer.start_span("op")
             with span_in_context(span):
                 r = f(*args, **kwargs)
                 return r
+
         wrapper.__name__ = f.__name__
         return wrapper
+
     return decorator
 
 
@@ -180,21 +209,25 @@ def getForwardHeaders(request):
     span = get_current_span()
     carrier = {}
     tracer.inject(
-        span_context=span.context,
-        format=Format.HTTP_HEADERS,
-        carrier=carrier)
+        span_context=span.context, format=Format.HTTP_HEADERS, carrier=carrier
+    )
 
     headers.update(carrier)
 
     # We handle other (non x-b3-***) headers manually
-    if 'user' in session:
-        headers['end-user'] = session['user']
+    if "user" in session:
+        headers["end-user"] = session["user"]
 
-    incoming_headers = ['x-request-id', 'x-datadog-trace-id', 'x-datadog-parent-id', 'x-datadog-sampled']
+    incoming_headers = [
+        "x-request-id",
+        "x-datadog-trace-id",
+        "x-datadog-parent-id",
+        "x-datadog-sampled",
+    ]
 
     # Add user-agent to headers manually
-    if 'user-agent' in request.headers:
-        headers['user-agent'] = request.headers.get('user-agent')
+    if "user-agent" in request.headers:
+        headers["user-agent"] = request.headers.get("user-agent")
 
     for ihdr in incoming_headers:
         val = request.headers.get(ihdr)
@@ -206,36 +239,39 @@ def getForwardHeaders(request):
 
 
 # The UI:
-@app.route('/')
-@app.route('/index.html')
+@app.route("/")
+@app.route("/index.html")
 def index():
     """ Display productpage with normal user and test user buttons"""
     global productpage
 
-    table = json2html.convert(json=json.dumps(productpage),
-                              table_attributes="class=\"table table-condensed table-bordered table-hover\"")
+    table = json2html.convert(
+        json=json.dumps(productpage),
+        table_attributes='class="table table-condensed table-bordered table-hover"',
+    )
 
-    return render_template('index.html', serviceTable=table)
+    return render_template("index.html", serviceTable=table)
 
 
-@app.route('/health')
+@app.route("/health")
 def health():
-    return 'Product page is healthy'
+    return "Product page is healthy"
 
 
-@app.route('/login', methods=['POST'])
+@app.route("/login", methods=["POST"])
 def login():
-    user = request.values.get('username')
+    user = request.values.get("username")
     response = app.make_response(redirect(request.referrer))
-    session['user'] = user
+    session["user"] = user
     return response
 
 
-@app.route('/logout', methods=['GET'])
+@app.route("/logout", methods=["GET"])
 def logout():
     response = app.make_response(redirect(request.referrer))
-    session.pop('user', None)
+    session.pop("user", None)
     return response
+
 
 # a helper function for asyncio.gather, does not return a value
 
@@ -243,12 +279,19 @@ def logout():
 async def getProductReviewsIgnoreResponse(product_id, headers):
     getProductReviews(product_id, headers)
 
+
 # flood reviews with unnecessary requests to demonstrate Istio rate limiting, asynchoronously
 
 
 async def floodReviewsAsynchronously(product_id, headers):
     # the response is disregarded
-    await asyncio.gather(*(getProductReviewsIgnoreResponse(product_id, headers) for _ in range(flood_factor)))
+    await asyncio.gather(
+        *(
+            getProductReviewsIgnoreResponse(product_id, headers)
+            for _ in range(flood_factor)
+        )
+    )
+
 
 # flood reviews with unnecessary requests to demonstrate Istio rate limiting
 
@@ -259,12 +302,12 @@ def floodReviews(product_id, headers):
     loop.close()
 
 
-@app.route('/productpage')
+@app.route("/productpage")
 @trace()
 def front():
     product_id = 0  # TODO: replace default value
     headers = getForwardHeaders(request)
-    user = session.get('user', '')
+    user = session.get("user", "")
     product = getProduct(product_id)
     detailsStatus, details = getProductDetails(product_id, headers)
 
@@ -273,17 +316,18 @@ def front():
 
     reviewsStatus, reviews = getProductReviews(product_id, headers)
     return render_template(
-        'productpage.html',
+        "productpage.html",
         detailsStatus=detailsStatus,
         reviewsStatus=reviewsStatus,
         product=product,
         details=details,
         reviews=reviews,
-        user=user)
+        user=user,
+    )
 
 
 # The API:
-@app.route('/api/v1/products', methods=["POST", "GET"])
+@app.route("/api/v1/products", methods=["POST", "GET"])
 def productsRoute():
 
     if request.method == "POST":
@@ -295,39 +339,49 @@ def productsRoute():
 
         products.append(product)
 
-        code, response = addFakeProductRatingAndDetails(product["id"])
+        code, response = add_fake_details_and_ratings(product["id"])
         if code != 200:
             products.pop()
-            return json.dumps(response), 500, {'Content-Type': 'application/json', "Product-Page-Added": "False"}
+            return (
+                json.dumps(response),
+                500,
+                {"Content-Type": "application/json", "Product-Page-Added": "False"},
+            )
         else:
-            return json.dumps(getProducts()), 200, {'Content-Type': 'application/json', "Product-Page-Added": "True"}
+
+            return (
+                json.dumps(getProducts()),
+                200,
+                {"Content-Type": "application/json", "Product-Page-Added": "True"},
+            )
 
     else:
-        return json.dumps(getProducts()), 200, {'Content-Type': 'application/json'}
+        return json.dumps(getProducts()), 200, {"Content-Type": "application/json"}
 
 
-@app.route('/api/v1/products/<product_id>')
+@app.route("/api/v1/products/<product_id>")
 @trace()
 def productRoute(product_id):
     headers = getForwardHeaders(request)
     status, details = getProductDetails(product_id, headers)
-    return json.dumps(details), status, {'Content-Type': 'application/json'}
+    return json.dumps(details), status, {"Content-Type": "application/json"}
 
 
-@app.route('/api/v1/products/<product_id>/reviews')
+@app.route("/api/v1/products/<product_id>/reviews")
 @trace()
 def reviewsRoute(product_id):
     headers = getForwardHeaders(request)
     status, reviews = getProductReviews(product_id, headers)
-    return json.dumps(reviews), status, {'Content-Type': 'application/json'}
+    return json.dumps(reviews), status, {"Content-Type": "application/json"}
 
 
-@app.route('/api/v1/products/<product_id>/ratings')
+@app.route("/api/v1/products/<product_id>/ratings")
 @trace()
 def ratingsRoute(product_id):
     headers = getForwardHeaders(request)
     status, ratings = getProductRatings(product_id, headers)
-    return json.dumps(ratings), status, {'Content-Type': 'application/json'}
+    return json.dumps(ratings), status, {"Content-Type": "application/json"}
+
 
 # Data providers:
 def getProducts():
@@ -355,7 +409,7 @@ def getProduct(product_id):
 
 def getProductDetails(product_id, headers):
     try:
-        url = details['name'] + "/" + details['endpoint'] + "/" + str(product_id)
+        url = details["name"] + "/" + details["endpoint"] + "/" + str(product_id)
         res = requests.get(url, headers=headers, timeout=3.0)
     except BaseException:
         res = None
@@ -363,7 +417,12 @@ def getProductDetails(product_id, headers):
         return 200, res.json()
     else:
         status = res.status_code if res is not None and res.status_code else 500
-        return status, {'error': 'Sorry, product details are currently unavailable for this book.'}
+        return (
+            status,
+            {
+                "error": "Sorry, product details are currently unavailable for this book."
+            },
+        )
 
 
 def getProductReviews(product_id, headers):
@@ -371,19 +430,22 @@ def getProductReviews(product_id, headers):
     # TODO: Figure out how to achieve the same effect using Envoy retries/timeouts
     for _ in range(2):
         try:
-            url = reviews['name'] + "/" + reviews['endpoint'] + "/" + str(product_id)
+            url = reviews["name"] + "/" + reviews["endpoint"] + "/" + str(product_id)
             res = requests.get(url, headers=headers, timeout=3.0)
         except BaseException:
             res = None
         if res and res.status_code == 200:
             return 200, res.json()
     status = res.status_code if res is not None and res.status_code else 500
-    return status, {'error': 'Sorry, product reviews are currently unavailable for this book.'}
+    return (
+        status,
+        {"error": "Sorry, product reviews are currently unavailable for this book."},
+    )
 
 
 def getProductRatings(product_id, headers):
     try:
-        url = ratings['name'] + "/" + ratings['endpoint'] + "/" + str(product_id)
+        url = ratings["name"] + "/" + ratings["endpoint"] + "/" + str(product_id)
         res = requests.get(url, headers=headers, timeout=3.0)
     except BaseException:
         res = None
@@ -391,27 +453,80 @@ def getProductRatings(product_id, headers):
         return 200, res.json()
     else:
         status = res.status_code if res is not None and res.status_code else 500
-        return status, {'error': 'Sorry, product ratings are currently unavailable for this book.'}
+        return (
+            status,
+            {
+                "error": "Sorry, product ratings are currently unavailable for this book."
+            },
+        )
 
-def addFakeProductRatingAndDetails(product_id):
-    """
-    Let the saga transaction begin! This request should be intersected by qbox,
-    and the response should be returned from qbox
-    """
 
+def add_fake_details_and_ratings(product_id):
+
+    """
+    Let the saga transaction begin! This request should be sent to a message queue.
+    """
     try:
-        res = requests.get("http://localhost:3002", 
-            headers={"Start-Faking": "True", "Product-Id": str(product_id)},
-            proxies={"http": "http://localhost:3001", "https": "http://localhost:3001"})
-        return res.status_code, res.content
+        handler = HandleSaga()
+        return handler.fanout(product_id)
     except Exception as e:
         return 500, str(e)
 
-if __name__ == '__main__':
+
+class HandleSaga(object):
+    def __init__(self):
+        self.channel = connection.channel()
+
+    def fanout(self, product_id):
+        self.channel.exchange_declare(exchange="saga", exchange_type="fanout")
+        self.channel.basic_publish(
+            exchange="saga",
+            properties=pika.BasicProperties(content_type="text/plain", delivery_mode=1),
+            routing_key="",
+            body=str(product_id),
+        )
+        self.wait_on_acks(product_id)
+        if self.failed:
+            return 500, "Had to abort transaction"
+        else:
+            return 200, "Successfully processed"
+
+    def wait_on_acks(self, product_id):
+
+        responses_to_wait_for = os.getenv("CONSUMER_COUNT", 1)
+
+        def handle_messages(channel, method, properties, body):
+
+            responses_to_wait_for -= 1
+
+            if body.encode("utf-8") != "success":
+                channel.stop_consuming()
+                self.failed = True
+                self.fanout_compensations(product_id)
+
+            if responses_to_wait_for <= 0:
+                channel.stop_consuming()
+
+        channel.basic_consume(handle_messages, queue="responses")
+        channel.start_consuming()
+
+    def fanout_compensations(product_id):
+
+        self.channel.basic_publish(
+            exchange="saga",
+            properties=pika.BasicProperties(content_type="text/plain", delivery_mode=1),
+            routing_key="",
+            body="Undo {}".format(str(product_id)),
+        )
+
+        return "Had to abort transaction"
+
+
+if __name__ == "__main__":
     if len(sys.argv) < 2:
         logging.error("usage: %s port" % (sys.argv[0]))
         sys.exit(-1)
 
     p = int(sys.argv[1])
     logging.info("start at port %s" % (p))
-    app.run(host='::', port=p, debug=True, threaded=True)
+    app.run(host="::", port=p, debug=True, threaded=True)

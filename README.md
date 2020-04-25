@@ -16,8 +16,11 @@ Build the Q Coordination Engine (or `qbox`) and the Istio `BookInfo` application
 
  - A service account key generated from Google Cloud for the project stored on your machine somewhere. This is necessary so that you can use `gcloud` to connect to GCP. If you don't have a service account, follow [these instructions](https://cloud.google.com/iam/docs/creating-managing-service-accounts). If you need to generate a key for an existing service account, follow [these instructions](https://cloud.google.com/iam/docs/creating-managing-service-account-keys) to generate and download.
 
- - A Terraform cloud storage bucket that you have access to. This is used to store [Terraform state](https://www.terraform.io/docs/state/index.html) remotely so that teams can work together on the same resources. A bucket called `tfstate-backend` has already been created for you, and Terraform has already been configured to use it for state in this repo. If it is ever deleted, please create a new bucket and update `terraform-backend.tf` accordingly.  
+ - A Terraform cloud storage bucket that you have access to. This is used to store [Terraform state](https://www.terraform.io/docs/state/index.html) remotely so that teams can work together on the same resources. A bucket called `tfstate-backend-v2` has already been created for you, and Terraform has already been configured to use it for state in this repo. If it is ever deleted, please create a new bucket and update `terraform-backend.tf` accordingly.  
 
+ - Helm! Download the binary from `https://helm.sh/docs/intro/install/`. 
+
+ - Add the Bitnami charts repo: `helm repo add bitnami https://charts.bitnami.com/bitnami`
 
  - A variable file called `values.tfvars` at the top-level of this repository. The following is a template, please replace the values:
 

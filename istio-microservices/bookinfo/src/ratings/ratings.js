@@ -12,9 +12,16 @@
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
 
+var ampq = require('amqplib/callback_api')
 var http = require('http')
 var dispatcher = require('httpdispatcher')
 var faker = require('faker');
+
+ampq.connect('amqp://localhost', function(err, conn) {
+  if (err != null) bail(err);
+  consumer(conn);
+  publisher(conn);
+})
 
 var port = parseInt(process.argv[2])
 

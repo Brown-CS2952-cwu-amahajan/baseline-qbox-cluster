@@ -1,3 +1,12 @@
+provider "helm" {
+  kubernetes {
+    host = "https://${google_container_cluster.primary.endpoint}"
+    insecure = true
+    username = "admin"
+    password = var.password
+  }
+}
+
 # Deliberately kept insecure in that it only uses HTTP Basic Auth. 
 # We should fix this eventually, but good enough for testing for now.
 provider "kubectl" {
@@ -12,6 +21,15 @@ provider "kubectl" {
 
 data "kubectl_file_documents" "manifests" {
     content = file(var.bookinfo_apps_path)
+}
+
+resource "helm" {
+  name = "rabbitmq"
+  chart = "bitnami/rabbitmq"
+  set {
+    name = "rabbitmq.password"
+    value = "qxevtnump90"
+  }
 }
 
 resource "null_resource" "add_configmap" {

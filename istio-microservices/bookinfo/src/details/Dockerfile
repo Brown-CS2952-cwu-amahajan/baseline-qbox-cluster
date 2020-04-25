@@ -21,6 +21,8 @@ ENV SERVICE_VERSION ${service_version:-v1}
 ARG enable_external_book_service
 ENV ENABLE_EXTERNAL_BOOK_SERVICE ${enable_external_book_service:-false}
 
+RUN gem install bunny
+
 EXPOSE 9080
 WORKDIR /opt/microservices
 
