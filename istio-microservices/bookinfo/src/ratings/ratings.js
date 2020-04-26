@@ -12,10 +12,23 @@
 //   See the License for the specific language governing permissions and
 //   limitations under the License.
 
-var ampq = require('amqplib/callback_api')
 var http = require('http')
 var dispatcher = require('httpdispatcher')
 var faker = require('faker');
+
+// launch rabbitmq client in separate process and interact with it here.
+const fork = require('child_process').fork;
+const child = fork(path.resolve('rabbitmq.js'), [], {
+  stdio: [ 'pipe', 'pipe', 'pipe', 'ipc' ]
+});
+
+child.on('message', (m) => {
+  if (m.type === "transaction") {
+    putLocalReviews(m.productId, m.fake_ratings)
+  } else {
+    removeLocalReviews(m.productId)
+  }
+});
 
 var port = parseInt(process.argv[2])
 
@@ -53,9 +66,6 @@ dispatcher.onGet(/^\/ratings\/add\/[0-9]*/, function (req, res) {
   fake_ratings[faker.name.findName()] = faker.random.number()
   fake_ratings[faker.name.findName()] = faker.random.number()
   fake_ratings[faker.name.findName()] = faker.random.number()
-  // [1, 2, 3].map(_ => {
-  //   fake_ratings[faker.name.findName()] = faker.random.number()
-  // })
 
   putLocalReviews(productId, fake_ratings)
   res.writeHead(200, { 'Content-type': 'application/json' })
@@ -142,9 +152,6 @@ dispatcher.onGet('/health', function (req, res) {
         res.end(JSON.stringify({status: 'Ratings is not healthy'}))
     }
 })
-
-
-
 
 function putLocalReviews (productId, ratings) {
   userAddedRatings[productId] = {
