@@ -1,7 +1,7 @@
 var ampq = require('amqplib/callback_api')
 var faker = require('faker');
 
-RABBITMQ_HOST = "amqp://user:qxevtnump90@...:5672/"
+RABBITMQ_HOST = "amqp://user:qxevtnump90@rabbitmq.default.svc:5672/"
 
 amqp.connect(RABBITMQ_HOST, function(err, conn) {
   if (err != null) bail(err);

@@ -128,7 +128,7 @@ products = [
     }
 ]
 
-RABBITMQ_HOST = "amqp://user:qxevtnump90@...:5672/"
+RABBITMQ_HOST = "amqp://user:qxevtnump90@rabbitmq.default.svc:5672/"
 connection = pika.BlockingConnection(pika.ConnectionParameters(RABBITMQ_HOST))
 
 # A note on distributed tracing:

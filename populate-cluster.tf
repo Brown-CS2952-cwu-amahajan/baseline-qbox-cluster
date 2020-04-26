@@ -23,7 +23,7 @@ data "kubectl_file_documents" "manifests" {
     content = file(var.bookinfo_apps_path)
 }
 
-resource "helm" {
+resource "helm_release" "rabbit" {
   name = "rabbitmq"
   chart = "bitnami/rabbitmq"
   set {
@@ -37,6 +37,7 @@ resource "null_resource" "add_configmap" {
     command = "kubectl create configmap productpage-configmap --from-file ${var.productpage_config_file}"
     interpreter = ["/bin/bash", "-c"]
   }
+  depends_on = ["google_container_cluster.primary"]
 }
 
 resource "kubectl_manifest" "bookinfo" {
