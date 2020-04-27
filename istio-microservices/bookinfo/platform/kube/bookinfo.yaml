@@ -327,7 +327,7 @@ spec:
         env:
           - name: CONSUMER_COUNT
             # depends on the number of consumers involved
-            value: 2
+            value: "2"
         ports:
         - containerPort: 9080
         volumeMounts:
