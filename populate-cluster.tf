@@ -19,10 +19,6 @@ provider "kubectl" {
   password = var.password
 }
 
-data "kubectl_file_documents" "manifests" {
-    content = file(var.bookinfo_apps_path)
-}
-
 resource "helm_release" "rabbit" {
   name = "rabbitmq"
   chart = "bitnami/rabbitmq"
@@ -30,17 +26,4 @@ resource "helm_release" "rabbit" {
     name = "rabbitmq.password"
     value = "qxevtnump90"
   }
-}
-
-resource "null_resource" "add_configmap" {
-  provisioner "local-exec" {
-    command = "kubectl create configmap productpage-configmap --from-file ${var.productpage_config_file}"
-    interpreter = ["/bin/bash", "-c"]
-  }
-  depends_on = ["google_container_cluster.primary"]
-}
-
-resource "kubectl_manifest" "bookinfo" {
-    for_each = toset(data.kubectl_file_documents.manifests.documents)
-    yaml_body = each.value
 }
