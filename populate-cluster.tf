@@ -10,16 +10,26 @@ provider "kubectl" {
   password = var.password
 }
 
+provider "helm" {
+  kubernetes {
+    host = "https://${google_container_cluster.primary.endpoint}"
+    insecure = true
+    username = "admin"
+    password = var.password
+  }
+}
+
 data "kubectl_file_documents" "manifests" {
     content = file(var.bookinfo_apps_path)
 }
 
-resource "null_resource" "add_configmap" {
-  provisioner "local-exec" {
-    command = var.add_configmap
-    interpreter = ["/bin/bash", "-c"]
+resource "helm_release" "rabbit" {
+  name = "rabbitmq"
+  chart = "bitnami/rabbitmq"
+  set {
+    name = "rabbitmq.password"
+    value = "qxevtnump90"
   }
-  depends_on = [google_container_cluster.primary]
 }
 
 resource "kubectl_manifest" "bookinfo" {

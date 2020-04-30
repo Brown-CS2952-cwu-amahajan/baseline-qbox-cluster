@@ -3,10 +3,10 @@ EXTERNAL_IPS:=$$(gcloud compute forwarding-rules list | grep us-central | cut -d
 
 build:
 	GOOGLE_APPLICATION_CREDENTIALS=$(CREDENTIALS) terraform init
-	GOOGLE_APPLICATION_CREDENTIALS=$(CREDENTIALS) terraform apply -auto-approve -var-file="test/values.tfvars"
+	GOOGLE_APPLICATION_CREDENTIALS=$(CREDENTIALS) terraform apply -auto-approve -var-file="values.tfvars"
 
 destroy:
-	GOOGLE_APPLICATION_CREDENTIALS=$(CREDENTIALS) terraform destroy -auto-approve -var-file="test/values.tfvars"
+	GOOGLE_APPLICATION_CREDENTIALS=$(CREDENTIALS) terraform destroy -auto-approve -var-file="values.tfvars"
 	gcloud compute forwarding-rules delete --region us-central1 --quiet $(EXTERNAL_IPS)
 show:
 	GOOGLE_APPLICATION_CREDENTIALS=$(CREDENTIALS) terraform show

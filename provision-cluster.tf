@@ -46,7 +46,7 @@ resource "google_container_cluster" "primary" {
   # Set istio-injection by default into the `default` namespace. 
   # Thus, pods will automatically get Envoy inserted into them.
   provisioner "local-exec" {
-    command = "kubectl config use-context gke_ordinal-motif-270122_us-central1-c_primary; kubectl label namespace default istio-injection=enabled"
+    command = "kubectl config use-context gke_ordinal-motif-270122_us-central1-c_primary"
     interpreter = ["/bin/bash", "-c"]
   }
 

@@ -9,7 +9,3 @@ variable "password" {
 variable "bookinfo_apps_path" {
   type = string
 }
-
-variable "add_configmap" {
-  type = string
-}
