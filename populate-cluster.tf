@@ -23,8 +23,14 @@ data "kubectl_file_documents" "manifests" {
     content = file(var.bookinfo_apps_path)
 }
 
+data "helm_repository" "bitnami" {
+  name = "bitnami"
+  url  = "https://charts.bitnami.com/bitnami"
+}
+
 resource "helm_release" "rabbit" {
   name = "rabbitmq"
+  repository = data.helm_repository.bitnami.metadata[0].name
   chart = "bitnami/rabbitmq"
   set {
     name = "rabbitmq.password"
