@@ -18,15 +18,16 @@ var http = require('http')
 var port = parseInt(process.argv[2])
 var dispatcher = require('httpdispatcher')
 var ampq = require('amqplib/callback_api')
-// TODO: Handle and send compensating transactions somehow.
 var RABBITMQ_HOST = "amqp://user:qxevtnump90@rabbitmq.default.svc:5672/"
 
 var local_log = {}
 var tracked_messages = {}
 
 function add_id(id) {
-     fake_data = faker.random.number()
-     local_log[id] = fake_data     
+    if (!(id in local_log)) {
+        fake_data = faker.random.number()
+        local_log[id] = fake_data   
+    }  
 }
 
 function delete_id(id) {
@@ -40,8 +41,7 @@ dispatcher.onGet(/^\/saga-add\/[0-9]*/, function(req, res) {
     var id = req.url.split('/').pop()
     id = parseInt(id)
     
-    fake_data = faker.random.number()
-    local_log[id] = fake_data
+    add_id(id)
 
     ampq.connect(RABBITMQ_HOST, function(err, conn) {
         conn.createChannel(function(err, ch) {
@@ -52,12 +52,40 @@ dispatcher.onGet(/^\/saga-add\/[0-9]*/, function(req, res) {
             var children = process.env.CHILD_QUEUES.split(";");
             var messages = {}
 
-            for (i = 0; i < children.length(); i++) {
-                var message_id = uuid.v4()
-                messages[message_id] = children
-                ch.sendToQueue(i, Buffer.from(JSON.stringify({
-                    message_id: message_id,
+            for (i = 0; i < children.length; i++) {
+                ch.sendToQueue(children[i], Buffer.from(JSON.stringify({
+                    id: id,
                     type: "TRANSACTION",
+                    responseQueue: process.env.HANDLE_RESPONSES_QUEUE,
+                })))
+            }
+        })
+    })
+
+    res.writeHead(200, {'Content-type': 'application/json'})
+    res.end(JSON.stringify(local_log))
+})
+
+dispatcher.onGet(/^\/saga-delete\/[0-9]*/, function(req, res) {
+
+    var id = req.url.split('/').pop()
+    id = parseInt(id)
+    
+    delete_id(id)
+
+    ampq.connect(RABBITMQ_HOST, function(err, conn) {
+        conn.createChannel(function(err, ch) {
+            if (err !== null) {
+                console.error(err);
+                process.exit(1);
+            }
+            var children = process.env.CHILD_QUEUES.split(";");
+            var messages = {}
+
+            for (i = 0; i < children.length; i++) {
+                ch.sendToQueue(children[i], Buffer.from(JSON.stringify({
+                    id: id,
+                    type: "COMPENSATION",
                     responseQueue: process.env.HANDLE_RESPONSES_QUEUE,
                 })))
             }
@@ -88,20 +116,23 @@ ampq.connect(RABBITMQ_HOST, function(err, conn) {
     ch.consume(process.env.INCOMING_QUEUE_NAME, function(msg) {
         if (msg !== null) {
             var content = JSON.parse(msg.content.toString())
+            console.log(msg)
+            console.log(msg.content)
+            console.log(content)
 
             if (!process.env.INTERMEDIATE) {
 
                 if (content.type === "TRANSACTION") {
                     if (process.env.SHOULD_FAIL) {
                         ch.sendToQueue(content.responseQueue, Buffer.from(JSON.stringify({
-                            message: content.message_id,
+                            id: content.id,
                             success: false,
                             source: process.env.INCOMING_QUEUE_NAME,
                         })))
                     } else {
                         add_id(content.id)
                         ch.sendToQueue(content.responseQueue, Buffer.from(JSON.stringify({
-                            message: content.message_id,
+                            id: content.id,
                             success: true,
                             source: process.env.INCOMING_QUEUE_NAME
                         })))
@@ -111,33 +142,51 @@ ampq.connect(RABBITMQ_HOST, function(err, conn) {
                 if (content.type === "COMPENSATION") {
                     delete_id(content.id)
                     ch.sendToQueue(content.responseQueue, Buffer.from(JSON.stringify({
-                        message: content.message_id,
+                        id: content.id,
                         success: true,
                         source: process.env.INCOMING_QUEUE_NAME
                     })))
                 }
 
             } else {
+
                 var children = process.env.CHILD_QUEUES.split(";");
                 var messages = {}
 
-                for (i = 0; i < children.length(); i++) {
-                    var message_id = uuid.v4()
-                    messages[message_id] = children
+                for (i = 0; i < children.length; i++) {
                     if (content.type === "TRANSACTION") {
-                        ch.sendToQueue(i, Buffer.from(JSON.stringify({
-                            message_id: message_id,
+                        ch.sendToQueue(children[i], Buffer.from(JSON.stringify({
                             type: "TRANSACTION",
+                            id: content.id,
                             responseQueue: process.env.HANDLE_RESPONSES_QUEUE,
                         })))
                     }
                     if (content.type === "COMPENSATION") {
-                        ch.sendToQueue(i, Buffer.from(JSON.stringify({
-                            message_id: message_id,
+                        ch.sendToQueue(children[i], Buffer.from(JSON.stringify({
+                            id: content.id,
                             type: "COMPENSATION",
                             responseQueue: process.env.HANDLE_RESPONSES_QUEUE,
                         })))
                     }
+                }
+            }
+        }
+    }, {
+      noAck: true
+    });
+
+    ch.assertQueue(process.env.HANDLE_RESPONSES_QUEUE);
+    ch.consume(process.env.HANDLE_RESPONSES_QUEUE, function(msg) {
+        if (msg !== null) {
+            var content = JSON.parse(msg.content.toString())
+            if (!content.success) {
+                var children = process.env.CHILD_QUEUES.split(";");
+                for (i = 0; i < children.length; i++) {
+                    ch.sendToQueue(children[i], Buffer.from(JSON.stringify({
+                        id: content.id,
+                        type: "COMPENSATION",
+                        responseQueue: process.env.HANDLE_RESPONSES_QUEUE,
+                    })))
                 }
             }
         }

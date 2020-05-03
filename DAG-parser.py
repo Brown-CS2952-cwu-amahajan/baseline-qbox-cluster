@@ -55,8 +55,7 @@ class DeploymentTemplate:
                             "containers": [
                                 {
                                     "name": name,
-                                    "image": "docker.io/cs2952fspring2020amahajcwu/baseline-fake-service:latest" if not bad \
-                                        else "docker.io/cs2952fspring2020amahajcwu/fake-service-bad:latest",
+                                    "image": "docker.io/cs2952fspring2020amahajcwu/baseline-fake-service:latest"
                                     "imagePullPolicy": "Always",
                                     "ports": [
                                         {
